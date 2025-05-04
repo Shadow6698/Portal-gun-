@@ -1,0 +1,76 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local mouse = player:GetMouse()
+
+local tool = Instance.new("Tool")
+tool.Name = "Portal Gun"
+tool.RequiresHandle = false
+tool.Parent = player.Backpack
+
+local portalA = nil
+local portalB = nil
+local placingA = true
+local lastTeleport = 0
+
+local function createPortal(position, color)
+	local portal = Instance.new("Part")
+	portal.Size = Vector3.new(4, 6, 0.2)
+	portal.Anchored = true
+	portal.CanCollide = false
+	portal.Position = position
+	portal.Color = color
+	portal.Material = Enum.Material.Neon
+	portal.Name = "Portal_" .. tostring(color)
+
+	local surfaceGui = Instance.new("SurfaceGui", portal)
+	surfaceGui.Face = Enum.NormalId.Front
+	surfaceGui.AlwaysOnTop = true
+
+	local frame = Instance.new("Frame", surfaceGui)
+	frame.Size = UDim2.new(1, 0, 1, 0)
+	frame.BackgroundTransparency = 0.3
+	frame.BackgroundColor3 = Color3.new(0, 0, 0)
+
+	portal.Parent = workspace
+	return portal
+end
+
+tool.Activated:Connect(function()
+	local target = mouse.Hit
+	if not target then return end
+
+	if placingA then
+		if portalA then portalA:Destroy() end
+		portalA = createPortal(target.Position + Vector3.new(0, 3, 0), Color3.fromRGB(0, 170, 255))
+	else
+		if portalB then portalB:Destroy() end
+		portalB = createPortal(target.Position + Vector3.new(0, 3, 0), Color3.fromRGB(255, 85, 0))
+	end
+	placingA = not placingA
+end)
+
+RunService.Heartbeat:Connect(function()
+	if not (portalA and portalB) then return end
+	local char = player.Character
+	if not (char and char:FindFirstChild("HumanoidRootPart")) then return end
+
+	local root = char.HumanoidRootPart
+	local now = tick()
+
+	if (root.Position - portalA.Position).Magnitude < 4 and now - lastTeleport >= 1 then
+		root.CFrame = portalB.CFrame + Vector3.new(0, 3, 0)
+		lastTeleport = now
+	elseif (root.Position - portalB.Position).Magnitude < 4 and now - lastTeleport >= 1 then
+		root.CFrame = portalA.CFrame + Vector3.new(0, 3, 0)
+		lastTeleport = now
+	end
+end)
+
+tool.Unequipped:Connect(function()
+	if portalA then portalA:Destroy() end
+	if portalB then portalB:Destroy() end
+	portalA = nil
+	portalB = nil
+	placingA = true
+end)
