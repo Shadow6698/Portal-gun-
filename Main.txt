@@ -1,18 +1,20 @@
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 local mouse = player:GetMouse()
+local Workspace = game:GetService("Workspace")
 
 local tool = Instance.new("Tool")
 tool.Name = "Portal Gun"
 tool.RequiresHandle = false
-tool.Parent = player.Backpack
+tool.Parent = player:WaitForChild("Backpack")
 
 local portalA = nil
 local portalB = nil
 local placingA = true
-local lastTeleport = 0
+local cooldown = {} -- Cooldown por objeto
+local TELEPORT_DELAY = 1 -- segundos
 
+-- Função para criar portais
 local function createPortal(position, color)
 	local portal = Instance.new("Part")
 	portal.Size = Vector3.new(4, 6, 0.2)
@@ -22,55 +24,89 @@ local function createPortal(position, color)
 	portal.Color = color
 	portal.Material = Enum.Material.Neon
 	portal.Name = "Portal_" .. tostring(color)
-
-	local surfaceGui = Instance.new("SurfaceGui", portal)
-	surfaceGui.Face = Enum.NormalId.Front
-	surfaceGui.AlwaysOnTop = true
-
-	local frame = Instance.new("Frame", surfaceGui)
-	frame.Size = UDim2.new(1, 0, 1, 0)
-	frame.BackgroundTransparency = 0.3
-	frame.BackgroundColor3 = Color3.new(0, 0, 0)
-
-	portal.Parent = workspace
+	portal.Parent = Workspace
 	return portal
 end
 
+-- Função para teletransportar objetos
+local function teleportObject(part, destination)
+	local root = part:IsA("Model") and part.PrimaryPart or part
+
+	if part:IsA("Model") then
+		if not part.PrimaryPart then
+			local primary = part:FindFirstChild("HumanoidRootPart") or part:FindFirstChildWhichIsA("BasePart")
+			if primary then part.PrimaryPart = primary end
+		end
+		if part.PrimaryPart then
+			part:SetPrimaryPartCFrame(destination.CFrame + Vector3.new(0, 3, 0))
+		end
+	elseif part:IsA("BasePart") and not part.Anchored and part.AssemblyRootPart then
+		part.AssemblyRootPart.CFrame = destination.CFrame + Vector3.new(0, 3, 0)
+	end
+end
+
+-- Função para conectar portais
+local function connectPortals(fromPortal, toPortal)
+	fromPortal.Touched:Connect(function(hit)
+		local obj = hit:IsDescendantOf(Workspace) and hit or nil
+		if not obj or not toPortal then return end
+
+		local root = obj
+		if obj:IsA("BasePart") and obj.AssemblyRootPart then
+			root = obj.AssemblyRootPart
+		elseif obj:IsA("BasePart") and obj.Parent:IsA("Model") then
+			root = obj.Parent
+		end
+
+		if cooldown[root] and tick() - cooldown[root] < TELEPORT_DELAY then return end
+		cooldown[root] = tick()
+
+		teleportObject(root, toPortal)
+	end)
+end
+
+-- Função para criar o botão "X" móvel
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "PortalUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = player:WaitForChild("PlayerGui")
+
+local closeButton = Instance.new("TextButton")
+closeButton.Size = UDim2.new(0, 40, 0, 40)
+closeButton.Position = UDim2.new(0, 10, 0, 10)
+closeButton.Text = "X"
+closeButton.TextScaled = true
+closeButton.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+closeButton.TextColor3 = Color3.new(1, 1, 1)
+closeButton.Parent = ScreenGui
+closeButton.ZIndex = 10
+closeButton.Active = true
+closeButton.Draggable = true -- Arrastável
+
+closeButton.MouseButton1Click:Connect(function()
+	if portalA then portalA:Destroy() portalA = nil end
+	if portalB then portalB:Destroy() portalB = nil end
+	placingA = true
+end)
+
+-- Conectar portais e ativar o teleport
 tool.Activated:Connect(function()
 	local target = mouse.Hit
 	if not target then return end
+	local pos = target.Position + Vector3.new(0, 3, 0)
 
 	if placingA then
 		if portalA then portalA:Destroy() end
-		portalA = createPortal(target.Position + Vector3.new(0, 3, 0), Color3.fromRGB(0, 170, 255))
+		portalA = createPortal(pos, Color3.fromRGB(0, 170, 255))
 	else
 		if portalB then portalB:Destroy() end
-		portalB = createPortal(target.Position + Vector3.new(0, 3, 0), Color3.fromRGB(255, 85, 0))
+		portalB = createPortal(pos, Color3.fromRGB(255, 85, 0))
 	end
+
 	placingA = not placingA
-end)
 
-RunService.Heartbeat:Connect(function()
-	if not (portalA and portalB) then return end
-	local char = player.Character
-	if not (char and char:FindFirstChild("HumanoidRootPart")) then return end
-
-	local root = char.HumanoidRootPart
-	local now = tick()
-
-	if (root.Position - portalA.Position).Magnitude < 4 and now - lastTeleport >= 1 then
-		root.CFrame = portalB.CFrame + Vector3.new(0, 3, 0)
-		lastTeleport = now
-	elseif (root.Position - portalB.Position).Magnitude < 4 and now - lastTeleport >= 1 then
-		root.CFrame = portalA.CFrame + Vector3.new(0, 3, 0)
-		lastTeleport = now
+	if portalA and portalB then
+		connectPortals(portalA, portalB)
+		connectPortals(portalB, portalA)
 	end
-end)
-
-tool.Unequipped:Connect(function()
-	if portalA then portalA:Destroy() end
-	if portalB then portalB:Destroy() end
-	portalA = nil
-	portalB = nil
-	placingA = true
 end)
