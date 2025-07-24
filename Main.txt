@@ -1,22 +1,24 @@
+-- SERVIÇO BÁSICO
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local player = Players.LocalPlayer
 local mouse = player:GetMouse()
 
--- Criar Tool
+-- TOOL PORTAL
 local tool = Instance.new("Tool")
 tool.Name = "Portal Gun"
 tool.RequiresHandle = false
 tool.Parent = player:WaitForChild("Backpack")
 
--- Variáveis de portais
+-- VARIÁVEIS DE PORTAL
 local portalA = nil
 local portalB = nil
 local placingA = true
 local cooldown = {}
 local TELEPORT_DELAY = 1
 
--- Criar portal
+-- CRIA PORTAL
 local function createPortal(position, color)
 	local portal = Instance.new("Part")
 	portal.Size = Vector3.new(4, 6, 0.2)
@@ -30,49 +32,39 @@ local function createPortal(position, color)
 	return portal
 end
 
--- Teleportar objetos
-local function teleportObject(part, destination)
-	local root = part:IsA("Model") and part.PrimaryPart or part
-	if part:IsA("Model") then
-		if not part.PrimaryPart then
-			local primary = part:FindFirstChild("HumanoidRootPart") or part:FindFirstChildWhichIsA("BasePart")
-			if primary then part.PrimaryPart = primary end
-		end
-		if part.PrimaryPart then
-			part:SetPrimaryPartCFrame(destination.CFrame + Vector3.new(0, 3, 0))
-		end
-	elseif part:IsA("BasePart") and not part.Anchored and part.AssemblyRootPart then
-		part.AssemblyRootPart.CFrame = destination.CFrame + Vector3.new(0, 3, 0)
-	end
+-- VERIFICA POSIÇÃO (metade do corpo)
+local function isInsidePortal(part, portal)
+	local relative = portal.CFrame:PointToObjectSpace(part.Position)
+	return math.abs(relative.X) <= 2 and math.abs(relative.Y) <= 3 and relative.Z > -0.5 and relative.Z < 0.5
 end
 
--- Conectar portais
+-- CONECTAR PORTAIS
 local function connectPortals(fromPortal, toPortal)
-	fromPortal.Touched:Connect(function(hit)
-		local obj = hit:IsDescendantOf(Workspace) and hit or nil
-		if not obj or not toPortal then return end
+	RunService.Heartbeat:Connect(function()
+		for _, character in ipairs(Workspace:GetChildren()) do
+			local root = nil
 
-		local root = obj
-		if obj:IsA("BasePart") and obj.AssemblyRootPart then
-			root = obj.AssemblyRootPart
-		elseif obj:IsA("BasePart") and obj.Parent:IsA("Model") then
-			root = obj.Parent
+			if character:IsA("Model") and character:FindFirstChild("HumanoidRootPart") then
+				root = character.HumanoidRootPart
+			end
+
+			if root and isInsidePortal(root, fromPortal) then
+				if cooldown[root] and tick() - cooldown[root] < TELEPORT_DELAY then continue end
+				cooldown[root] = tick()
+
+				local offset = fromPortal.CFrame:toObjectSpace(root.CFrame)
+				local targetCFrame = toPortal.CFrame:toWorldSpace(offset) + Vector3.new(0, 0.5, 0)
+				root.CFrame = targetCFrame
+			end
 		end
-
-		if cooldown[root] and tick() - cooldown[root] < TELEPORT_DELAY then return end
-		cooldown[root] = tick()
-
-		teleportObject(root, toPortal)
 	end)
 end
 
--- GUI
-local gui = Instance.new("ScreenGui")
+-- BOTÃO X PARA APAGAR PORTAIS
+local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
 gui.Name = "PortalUI"
 gui.ResetOnSpawn = false
-gui.Parent = player:WaitForChild("PlayerGui")
 
--- Botão X para remover os portais
 local closeButton = Instance.new("TextButton")
 closeButton.Size = UDim2.new(0, 40, 0, 40)
 closeButton.Position = UDim2.new(0, 10, 0, 10)
@@ -91,104 +83,7 @@ closeButton.MouseButton1Click:Connect(function()
 	placingA = true
 end)
 
--- GUI de setas para rotação
-local rotationGui = Instance.new("Frame")
-rotationGui.Size = UDim2.new(0, 120, 0, 120)
-rotationGui.Position = UDim2.new(0, 100, 0, 100)
-rotationGui.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-rotationGui.BackgroundTransparency = 0.3
-rotationGui.Active = true
-rotationGui.Draggable = true
-rotationGui.Parent = gui
-
-local function createArrowButton(text, pos, callback)
-	local button = Instance.new("TextButton")
-	button.Size = UDim2.new(0, 30, 0, 30)
-	button.Position = pos
-	button.Text = text
-	button.TextScaled = true
-	button.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-	button.TextColor3 = Color3.new(1, 1, 1)
-	button.Parent = rotationGui
-	button.MouseButton1Click:Connect(callback)
-	return button
-end
-
-local function rotatePortal(portal, axis, angle)
-	if portal then
-		local cf = portal.CFrame
-		if axis == "X" then
-			portal.CFrame = cf * CFrame.Angles(math.rad(angle), 0, 0)
-		elseif axis == "Y" then
-			portal.CFrame = cf * CFrame.Angles(0, math.rad(angle), 0)
-		elseif axis == "Z" then
-			portal.CFrame = cf * CFrame.Angles(0, 0, math.rad(angle))
-		end
-	end
-end
-
-createArrowButton("^", UDim2.new(0, 45, 0, 5), function()
-	rotatePortal(portalA, "X", -15)
-	rotatePortal(portalB, "X", -15)
-end)
-
-createArrowButton("v", UDim2.new(0, 45, 0, 85), function()
-	rotatePortal(portalA, "X", 15)
-	rotatePortal(portalB, "X", 15)
-end)
-
-createArrowButton("<", UDim2.new(0, 5, 0, 45), function()
-	rotatePortal(portalA, "Y", -15)
-	rotatePortal(portalB, "Y", -15)
-end)
-
-createArrowButton(">", UDim2.new(0, 85, 0, 45), function()
-	rotatePortal(portalA, "Y", 15)
-	rotatePortal(portalB, "Y", 15)
-end)
-
--- GUI de setas para mover os portais para cima/baixo
-local moveGui = Instance.new("Frame")
-moveGui.Size = UDim2.new(0, 120, 0, 120)
-moveGui.Position = UDim2.new(0, 250, 0, 100)
-moveGui.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-moveGui.BackgroundTransparency = 0.3
-moveGui.Active = true
-moveGui.Draggable = true
-moveGui.Parent = gui
-
-local function createMoveButton(text, pos, callback)
-	local button = Instance.new("TextButton")
-	button.Size = UDim2.new(0, 30, 0, 30)
-	button.Position = pos
-	button.Text = text
-	button.TextScaled = true
-	button.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-	button.TextColor3 = Color3.new(1, 1, 1)
-	button.Parent = moveGui
-	button.MouseButton1Click:Connect(callback)
-	return button
-end
-
-createMoveButton("↑", UDim2.new(0, 45, 0, 5), function()
-	if portalA then
-		portalA.CFrame = portalA.CFrame + Vector3.new(0, 5, 0)
-	end
-	if portalB then
-		portalB.CFrame = portalB.CFrame + Vector3.new(0, 5, 0)
-	end
-end)
-
-createMoveButton("↓", UDim2.new(0, 45, 0, 85), function()
-	if portalA then
-		portalA.CFrame = portalA.CFrame - Vector3.new(0, 5, 0)
-	end
-	if portalB then
-		portalB.CFrame = portalB.CFrame - Vector3.new(0, 5, 0)
-	end
-end)
-
--- Usar a ferramenta para posicionar os portais
+-- USAR A TOOL PARA CRIAR PORTAIS
 tool.Activated:Connect(function()
 	local target = mouse.Hit
 	if not target then return end
